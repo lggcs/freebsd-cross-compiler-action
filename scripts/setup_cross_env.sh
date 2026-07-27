@@ -151,10 +151,12 @@ else
             # Try GitHub API to find the asset
             API_URL="https://api.github.com/repos/${ACTION_REPO}/releases/tags/${RELEASE_TAG}"
             debug_log "Trying API: ${API_URL}"
-            ASSET_URL=$(curl -sL "$API_URL" 2>/dev/null \
+            API_RESPONSE=$(curl -sL "$API_URL" 2>/dev/null || echo "")
+            ASSET_URL=$(echo "$API_RESPONSE" \
                 | grep -o '"browser_download_url":\s*"[^"]*'"${SYSROOT_TARBALL}"'"' \
                 | head -1 \
-                | sed 's/.*"browser_download_url":\s*"//;s/"$//')
+                | sed 's/.*"browser_download_url":\s*"//;s/"$//' \
+                || true)
             if [ -n "$ASSET_URL" ]; then
                 debug_log "Found asset URL: $ASSET_URL"
                 fetch_url "$ASSET_URL" "$DOWNLOAD_FILE"
@@ -210,7 +212,7 @@ else
 
     # Extract sysroot
     debug_log "Extracting sysroot to ${CACHE_DIR}/"
-    tar -xf "$DOWNLOAD_FILE" -C "$CACHE_DIR/"
+    tar --zstd -xf "$DOWNLOAD_FILE" -C "$CACHE_DIR/"
 
     [ -f "${SYSROOT_DIR}/SYSROOT.txt" ] || fail "Sysroot extraction failed — SYSROOT.txt not found in ${SYSROOT_DIR}"
 fi
