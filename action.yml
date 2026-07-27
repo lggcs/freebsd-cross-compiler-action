@@ -1,0 +1,184 @@
+name: 'FreeBSD Cross Compiler'
+author: 'lggcs'
+description: 'Cross-compile C/C++/CMake projects to FreeBSD (amd64) directly on ubuntu-latest — no Docker, no VM, no QEMU. Supports custom sysroots, SBOM generation, and FreeBSD .pkg packaging.'
+
+branding:
+  icon: 'box'
+  color: 'blue'
+
+inputs:
+  # ── Build configuration ────────────────────────────────────────────
+  command:
+    description: 'Build command to run after setup (e.g., "cmake --build build-freebsd"). Leave empty to only set up the environment.'
+    required: false
+    default: ''
+  working-directory:
+    description: 'Working directory for the build command (defaults to workspace root)'
+    required: false
+    default: '.'
+  cflags:
+    description: 'Extra C compiler flags passed to the cross-compiler'
+    required: false
+    default: ''
+  cxxflags:
+    description: 'Extra C++ compiler flags passed to the cross-compiler'
+    required: false
+    default: ''
+  ldflags:
+    description: 'Extra linker flags passed to the cross-compiler'
+    required: false
+    default: ''
+  output-dir:
+    description: 'Directory to place compiled binaries (also where SBOM is written)'
+    required: false
+    default: 'build-freebsd'
+  debug:
+    description: 'Enable verbose diagnostics during setup'
+    required: false
+    default: 'false'
+
+  # ── Sysroot source ────────────────────────────────────────────────
+  target:
+    description: 'LLVM target triple (e.g., x86_64-unknown-freebsd15.1). Defaults to x86_64-unknown-freebsd15.1.'
+    required: false
+    default: 'x86_64-unknown-freebsd15.1'
+  sysroot-version:
+    description: 'FreeBSD release version for sysroot (e.g., 15.1-RELEASE, 14.3-RELEASE). Maps to download.freebsd.org and GitHub Release tags.'
+    required: false
+    default: '15.1-RELEASE'
+  sysroot-arch:
+    description: 'Sysroot architecture: amd64 or arm64. (Currently only amd64 has prebuilt sysroots.)'
+    required: false
+    default: 'amd64'
+
+  # ── Custom sysroot ────────────────────────────────────────────────
+  custom-sysroot-url:
+    description: 'Override the sysroot download URL. Point to your own audited, signed storage instead of the default GitHub Release CDN.'
+    required: false
+    default: ''
+  custom-sysroot-sha256:
+    description: 'Expected SHA-256 hash of the custom sysroot tarball. When set, the Action verifies the download against this hash before use.'
+    required: false
+    default: ''
+  verify-sysroot:
+    description: 'Verify the sysroot against official FreeBSD MANIFEST checksums at setup time. Options: "manifest" (check against download.freebsd.org), "sha256" (check custom-sysroot-sha256), "false" (no verification, default).'
+    required: false
+    default: 'false'
+
+  # ── SBOM generation ───────────────────────────────────────────────
+  generate-sbom:
+    description: 'Generate SBOM in CycloneDX and/or SPDX format'
+    required: false
+    default: 'false'
+  sbom-format:
+    description: 'SBOM format: cyclonedx, spdx, or both'
+    required: false
+    default: 'both'
+
+  # ── FreeBSD .pkg packaging ────────────────────────────────────────
+  package-output:
+    description: 'Wrap compiled binary into a FreeBSD .pkg file using FreeBSD packaging tools'
+    required: false
+    default: 'false'
+
+outputs:
+  sysroot-path:
+    description: 'Absolute path to the extracted FreeBSD sysroot'
+    value: ${{ steps.setup-cross-env.outputs.sysroot-path }}
+  cc:
+    description: 'Path to the cross C compiler wrapper'
+    value: ${{ steps.setup-cross-env.outputs.cc }}
+  cxx:
+    description: 'Path to the cross C++ compiler wrapper'
+    value: ${{ steps.setup-cross-env.outputs.cxx }}
+  target:
+    description: 'LLVM target triple for FreeBSD'
+    value: ${{ steps.setup-cross-env.outputs.target }}
+  toolchain-file:
+    description: 'Path to the CMake toolchain file for cross-compilation'
+    value: ${{ steps.setup-cross-env.outputs.toolchain-file }}
+  sysroot-sha256:
+    description: 'SHA-256 hash of the sysroot tarball actually used (for audit trail)'
+    value: ${{ steps.setup-cross-env.outputs.sysroot-sha256 }}
+  sbom-cyclonedx:
+    description: 'Path to generated CycloneDX SBOM (if generate-sbom was enabled)'
+    value: ${{ steps.generate-sbom.outputs.cyclonedx }}
+  sbom-spdx:
+    description: 'Path to generated SPDX SBOM (if generate-sbom was enabled)'
+    value: ${{ steps.generate-sbom.outputs.spdx }}
+  pkg-path:
+    description: 'Path to generated FreeBSD .pkg file (if package-output was enabled)'
+    value: ${{ steps.package-output.outputs.pkg-path }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Restore sysroot cache
+      id: sysroot-cache
+      uses: actions/cache@v5
+      with:
+        path: ${{ github.action_path }}/.cache/freebsd-sysroot-*
+        key: freebsd-sysroot-${{ inputs.sysroot-version }}-${{ inputs.sysroot-arch }}-${{ inputs.custom-sysroot-url || 'default' }}
+
+    - name: Set up FreeBSD cross-compile environment
+      id: setup-cross-env
+      shell: bash
+      env:
+        INPUT_DEBUG: ${{ inputs.debug }}
+        INPUT_TARGET: ${{ inputs.target }}
+        INPUT_SYSROOT_VERSION: ${{ inputs.sysroot-version }}
+        INPUT_SYSROOT_ARCH: ${{ inputs.sysroot-arch }}
+        INPUT_CFLAGS: ${{ inputs.cflags }}
+        INPUT_CXXFLAGS: ${{ inputs.cxxflags }}
+        INPUT_LDFLAGS: ${{ inputs.ldflags }}
+        INPUT_OUTPUT_DIR: ${{ inputs.output-dir }}
+        INPUT_CUSTOM_SYSROOT_URL: ${{ inputs.custom-sysroot-url }}
+        INPUT_CUSTOM_SYSROOT_SHA256: ${{ inputs.custom-sysroot-sha256 }}
+        INPUT_VERIFY_SYSROOT: ${{ inputs.verify-sysroot }}
+      run: |
+        bash "${{ github.action_path }}/scripts/setup_cross_env.sh"
+
+    - name: Run build command
+      shell: bash
+      env:
+        CC: ${{ steps.setup-cross-env.outputs.cc }}
+        CXX: ${{ steps.setup-cross-env.outputs.cxx }}
+        CFLAGS: ${{ steps.setup-cross-env.outputs.cflags }}
+        CXXFLAGS: ${{ steps.setup-cross-env.outputs.cxxflags }}
+        LDFLAGS: ${{ steps.setup-cross-env.outputs.ldflags }}
+        FREEBSD_SYSROOT: ${{ steps.setup-cross-env.outputs.sysroot-path }}
+        FREEBSD_TARGET: ${{ steps.setup-cross-env.outputs.target }}
+        FREEBSD_TOOLCHAIN_FILE: ${{ steps.setup-cross-env.outputs.toolchain-file }}
+        FREEBSD_CMAKE_FLAGS: ${{ steps.setup-cross-env.outputs.cmake-flags }}
+      if: ${{ inputs.command != '' }}
+      working-directory: ${{ inputs.working-directory }}
+      run: ${{ inputs.command }}
+
+    - name: Generate SBOM
+      id: generate-sbom
+      shell: bash
+      env:
+        INPUT_SBOM_FORMAT: ${{ inputs.sbom-format }}
+        INPUT_OUTPUT_DIR: ${{ inputs.output-dir }}
+        WORKSPACE: ${{ github.workspace }}
+        INPUT_DEBUG: ${{ inputs.debug }}
+        FREEBSD_SYSROOT: ${{ steps.setup-cross-env.outputs.sysroot-path }}
+        FREEBSD_TARGET: ${{ steps.setup-cross-env.outputs.target }}
+      if: ${{ inputs.generate-sbom == 'true' || inputs.generate-sbom == 'True' }}
+      run: |
+        bash "${{ github.action_path }}/scripts/generate_sbom.sh"
+
+    - name: Package as FreeBSD .pkg
+      id: package-output
+      shell: bash
+      env:
+        INPUT_OUTPUT_DIR: ${{ inputs.output-dir }}
+        WORKSPACE: ${{ github.workspace }}
+        INPUT_DEBUG: ${{ inputs.debug }}
+        FREEBSD_TARGET: ${{ steps.setup-cross-env.outputs.target }}
+        FREEBSD_SYSROOT: ${{ steps.setup-cross-env.outputs.sysroot-path }}
+        GITHUB_ACTOR: ${{ github.actor }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+      if: ${{ inputs.package-output == 'true' || inputs.package-output == 'True' }}
+      run: |
+        bash "${{ github.action_path }}/scripts/package_output.sh"

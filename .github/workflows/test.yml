@@ -1,0 +1,182 @@
+name: Test FreeBSD Cross-Compilation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'action.yml'
+      - 'scripts/**'
+      - 'examples/**'
+      - '.github/workflows/test.yml'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test-c:
+    name: Test C Cross-Compile
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Cross-compile C to FreeBSD
+        uses: ./
+        with:
+          command: |
+            $CC -o build-freebsd/hello examples/hello.c
+          debug: 'true'
+
+      - name: Verify binary
+        run: |
+          file build-freebsd/hello
+          file build-freebsd/hello | grep -q 'FreeBSD' || (echo "Not a FreeBSD binary!" && exit 1)
+          file build-freebsd/hello | grep -q 'x86-64' || (echo "Not x86-64!" && exit 1)
+          file build-freebsd/hello | grep -q 'ELF' || (echo "Not ELF!" && exit 1)
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v5
+        with:
+          name: freebsd-hello-c
+          path: build-freebsd/hello
+
+  test-cpp:
+    name: Test C++ Cross-Compile
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Cross-compile C++ to FreeBSD
+        uses: ./
+        with:
+          command: |
+            $CXX -o build-freebsd/hello-cpp examples/hello.cpp
+          debug: 'true'
+
+      - name: Verify binary
+        run: |
+          file build-freebsd/hello-cpp
+          file build-freebsd/hello-cpp | grep -q 'FreeBSD' || (echo "Not a FreeBSD binary!" && exit 1)
+          file build-freebsd/hello-cpp | grep -q 'x86-64' || (echo "Not x86-64!" && exit 1)
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v5
+        with:
+          name: freebsd-hello-cpp
+          path: build-freebsd/hello-cpp
+
+  test-cmake:
+    name: Test CMake Cross-Compile
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Cross-compile CMake project to FreeBSD
+        uses: ./
+        with:
+          command: |
+            cmake -B build-freebsd -S examples $FREEBSD_CMAKE_FLAGS
+            cmake --build build-freebsd
+          debug: 'true'
+
+      - name: Verify binaries
+        run: |
+          file build-freebsd/hello-cmake
+          file build-freebsd/hello-cmake | grep -q 'FreeBSD' || (echo "hello-cmake not FreeBSD!" && exit 1)
+          file build-freebsd/hello-cmake-cpp | grep -q 'FreeBSD' || (echo "hello-cmake-cpp not FreeBSD!" && exit 1)
+
+      - name: Upload binaries
+        uses: actions/upload-artifact@v5
+        with:
+          name: freebsd-hello-cmake
+          path: build-freebsd/hello-cmake*
+
+  test-make:
+    name: Test Make Cross-Compile
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Cross-compile Make project to FreeBSD
+        uses: ./
+        with:
+          command: make -C examples/make-project all
+          debug: 'true'
+
+      - name: Verify binary
+        run: |
+          file examples/make-project/hello-make
+          file examples/make-project/hello-make | grep -q 'FreeBSD' || (echo "Not a FreeBSD binary!" && exit 1)
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v5
+        with:
+          name: freebsd-hello-make
+          path: examples/make-project/hello-make
+
+  test-setup-only:
+    name: Test Setup-Only Mode
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up FreeBSD environment only
+        uses: ./
+        with:
+          debug: 'true'
+
+      - name: Verify environment variables
+        run: |
+          echo "CC: $CC"
+          echo "CXX: $CXX"
+          echo "FREEBSD_SYSROOT: $FREEBSD_SYSROOT"
+          echo "FREEBSD_TARGET: $FREEBSD_TARGET"
+          echo "FREEBSD_TOOLCHAIN_FILE: $FREEBSD_TOOLCHAIN_FILE"
+          test -f "$CC" || (echo "CC wrapper missing!" && exit 1)
+          test -f "$CXX" || (echo "CXX wrapper missing!" && exit 1)
+          test -d "$FREEBSD_SYSROOT" || (echo "Sysroot missing!" && exit 1)
+          test -f "$FREEBSD_TOOLCHAIN_FILE" || (echo "Toolchain file missing!" && exit 1)
+
+      - name: Use CC directly
+        run: |
+          $CC -o /tmp/hello examples/hello.c
+          file /tmp/hello | grep -q 'FreeBSD' || (echo "Not FreeBSD!" && exit 1)
+
+  test-custom-sysroot:
+    name: Test Custom Sysroot URL
+    runs-on: ubuntu-latest
+    # This test uses the bundled sysroot as if it were a custom URL
+    # In practice, this would point to your own audited, signed storage
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Compute sysroot hash
+        id: hash
+        run: |
+          echo "sha256=$(sha256sum freebsd-sysroot-15.1-amd64.tar.zst | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "filename=freebsd-sysroot-15.1-amd64.tar.zst" >> "$GITHUB_OUTPUT"
+
+      - name: Serve bundled sysroot locally
+        run: |
+          python3 -m http.server 18080 --directory . &
+          echo $! > /tmp/server.pid
+          sleep 2
+
+      - name: Cross-compile with custom sysroot
+        uses: ./
+        with:
+          custom-sysroot-url: 'http://localhost:18080/${{ steps.hash.outputs.filename }}'
+          custom-sysroot-sha256: ${{ steps.hash.outputs.sha256 }}
+          verify-sysroot: 'sha256'
+          command: |
+            $CC -o build-freebsd/hello examples/hello.c
+          debug: 'true'
+
+      - name: Verify binary
+        run: |
+          file build-freebsd/hello
+          file build-freebsd/hello | grep -q 'FreeBSD' || (echo "Not a FreeBSD binary!" && exit 1)
+
+      - name: Stop local server
+        if: always()
+        run: |
+          kill $(cat /tmp/server.pid 2>/dev/null) 2>/dev/null || true

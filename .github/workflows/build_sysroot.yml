@@ -1,0 +1,119 @@
+name: Build and Publish FreeBSD Sysroot
+
+# This workflow runs the transparent, open-source sysroot builder (build_sysroot.sh)
+# which downloads official FreeBSD base.txz from download.freebsd.org, verifies it
+# against the official MANIFEST checksums, and publishes the resulting sysroot as
+# a GitHub Release asset with SHA-256 checksums.
+#
+# Anyone can:
+#   1. Audit this workflow and build_sysroot.sh — every input is from official FreeBSD sources
+#   2. Verify the published SHA-256 checksums against the FreeBSD MANIFEST
+#   3. Pin a specific sysroot version in their pipeline using verify-sysroot=manifest
+
+on:
+  schedule:
+    # Run monthly to pick up FreeBSD patch releases
+    - cron: '0 3 1 * *'
+  workflow_dispatch:
+    inputs:
+      freebsd_version:
+        description: 'FreeBSD version (e.g., 15.1-RELEASE)'
+        required: true
+        default: '15.1-RELEASE'
+      arch:
+        description: 'Architecture (amd64)'
+        required: true
+        default: 'amd64'
+  push:
+    paths:
+      - 'scripts/build_sysroot.sh'
+    branches:
+      - main
+
+jobs:
+  build-sysroot:
+    name: Build FreeBSD Sysroot
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ -n "${{ github.event.inputs.freebsd_version }}" ]; then
+            echo "version=${{ github.event.inputs.freebsd_version }}" >> "$GITHUB_OUTPUT"
+            echo "arch=${{ github.event.inputs.arch }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=15.1-RELEASE" >> "$GITHUB_OUTPUT"
+            echo "arch=amd64" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends zstd xz-utils curl
+
+      - name: Build sysroot from official FreeBSD sources
+        run: |
+          chmod +x scripts/build_sysroot.sh
+          bash scripts/build_sysroot.sh "${{ steps.version.outputs.version }}" "${{ steps.version.outputs.arch }}" .
+
+      - name: Display provenance
+        run: |
+          echo "## Sysroot Build Provenance" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          cat freebsd-sysroot-*-SYSROOT.txt >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Checksums" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          cat CHECKSUMS-*.txt >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify the produced sysroot works
+        run: |
+          # Test that we can cross-compile a simple C program with the new sysroot
+          sudo apt-get install -y --no-install-recommends clang lld
+          mkdir -p /tmp/sysroot-test
+          tar -xf freebsd-sysroot-*.tar.zst -C /tmp/sysroot-test
+          SYSROOT=$(ls -d /tmp/sysroot-test/freebsd-sysroot-*)
+
+          printf '#include <stdio.h>\nint main(void) { printf("Hello FreeBSD!\\n"); return 0; }\n' > /tmp/test.c
+
+          clang --target=x86_64-unknown-freebsd$(echo "${{ steps.version.outputs.version }}" | sed 's/-RELEASE$//') \
+                --sysroot="$SYSROOT" -fuse-ld=lld -o /tmp/test-freebsd /tmp/test.c
+
+          file /tmp/test-freebsd | grep -q 'FreeBSD' || (echo "Binary is not FreeBSD ELF!" && exit 1)
+          echo "Cross-compile test passed with new sysroot"
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          TAG="v${VERSION}"
+          SHORT=$(echo "$VERSION" | sed 's/-RELEASE$//')
+          ARCH="${{ steps.version.outputs.arch }}"
+
+          TARBALL="freebsd-sysroot-${SHORT}-${ARCH}.tar.zst"
+          CHECKSUMS="CHECKSUMS-${SHORT}.txt"
+
+          # Create release (or get existing)
+          gh release create "$TAG" \
+            --title "FreeBSD ${VERSION} (${ARCH}) Sysroot" \
+            --notes "Automated sysroot build from official FreeBSD ${VERSION} ${ARCH} base.txz.
+
+          **Built by:** \`scripts/build_sysroot.sh\` (open-source, auditable)
+          **Source:** https://download.freebsd.org/releases/${ARCH}/${VERSION}/base.txz
+          **Verified:** base.txz SHA-256 matches official MANIFEST
+
+          See CHECKSUMS file for SHA-256 verification." \
+            --prerelease=false 2>/dev/null || true
+
+          # Upload assets
+          gh release upload "$TAG" "$TARBALL" "$CHECKSUMS" --clobber
+
+          echo "Release ${TAG} published with:"
+          echo "  - ${TARBALL}"
+          echo "  - ${CHECKSUMS}"

@@ -1,0 +1,24 @@
+# Cache directories (generated at runtime)
+.cache/
+scripts/__pycache__/
+
+# Sysroot tarballs (published as GitHub Release assets, not committed)
+freebsd-sysroot-*.tar.zst
+CHECKSUMS-*.txt
+
+# Build artifacts
+build-freebsd/
+*.o
+*.a
+*.so
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
