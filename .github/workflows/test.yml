@@ -144,10 +144,16 @@ jobs:
   test-custom-sysroot:
     name: Test Custom Sysroot URL
     runs-on: ubuntu-latest
-    # This test uses the bundled sysroot as if it were a custom URL
-    # In practice, this would point to your own audited, signed storage
+    # Downloads the sysroot from the GitHub Release, then serves it locally
+    # to simulate a custom sysroot URL (e.g., enterprise artifact storage)
     steps:
       - uses: actions/checkout@v5
+
+      - name: Download sysroot from release
+        run: |
+          curl -sSL -o freebsd-sysroot-15.1-amd64.tar.zst \
+            "https://github.com/${GITHUB_REPOSITORY}/releases/download/v15.1-RELEASE/freebsd-sysroot-15.1-amd64.tar.zst"
+          test -s freebsd-sysroot-15.1-amd64.tar.zst || (echo "Download failed" && exit 1)
 
       - name: Compute sysroot hash
         id: hash
@@ -155,7 +161,7 @@ jobs:
           echo "sha256=$(sha256sum freebsd-sysroot-15.1-amd64.tar.zst | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
           echo "filename=freebsd-sysroot-15.1-amd64.tar.zst" >> "$GITHUB_OUTPUT"
 
-      - name: Serve bundled sysroot locally
+      - name: Serve sysroot locally
         run: |
           python3 -m http.server 18080 --directory . &
           echo $! > /tmp/server.pid

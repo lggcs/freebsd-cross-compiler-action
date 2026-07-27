@@ -12,7 +12,7 @@
 #   "manifest" — verify base.txz against official FreeBSD MANIFEST
 set -euo pipefail
 
-DEBUG="${DEBUG:-false}"
+DEBUG="${INPUT_DEBUG:-false}"
 TARGET="${INPUT_TARGET:-x86_64-unknown-freebsd15.1}"
 SYSROOT_VERSION="${INPUT_SYSROOT_VERSION:-15.1-RELEASE}"
 SYSROOT_ARCH="${INPUT_SYSROOT_ARCH:-amd64}"
@@ -58,13 +58,16 @@ NEEDS_INSTALL=0
 if ! command -v clang >/dev/null 2>&1 || ! command -v ld.lld >/dev/null 2>&1; then
     NEEDS_INSTALL=1
 fi
+if ! command -v zstd >/dev/null 2>&1; then
+    NEEDS_INSTALL=1
+fi
 
 if [ "$NEEDS_INSTALL" -eq 1 ]; then
     sudo apt-get update -qq
-    sudo apt-get install -y --no-install-recommends clang lld
-    debug_log "Installed clang and lld via apt"
+    sudo apt-get install -y --no-install-recommends clang lld zstd
+    debug_log "Installed clang, lld, and zstd via apt"
 else
-    debug_log "clang and lld already present"
+    debug_log "clang, lld, and zstd already present"
 fi
 
 CLANG_BIN=$(command -v clang || command -v clang-17 || command -v clang-18 || command -v clang-19 || command -v clang-20)
