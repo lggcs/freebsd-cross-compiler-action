@@ -1,6 +1,6 @@
 name: 'FreeBSD Cross Compiler'
 author: 'lggcs'
-description: 'Cross-compile C/C++/CMake projects to FreeBSD (amd64) directly on ubuntu-latest — no Docker, no VM, no QEMU. Supports custom sysroots, SBOM generation, and FreeBSD .pkg packaging.'
+description: 'Cross-compile C/C++/CMake to FreeBSD (amd64) on ubuntu-latest — no Docker, no VM, no QEMU.'
 
 branding:
   icon: 'box'
