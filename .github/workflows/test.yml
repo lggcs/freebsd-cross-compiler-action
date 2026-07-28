@@ -23,6 +23,7 @@ jobs:
         uses: ./
         with:
           command: |
+            mkdir -p build-freebsd
             $CC -o build-freebsd/hello examples/hello.c
           debug: 'true'
 
@@ -49,6 +50,7 @@ jobs:
         uses: ./
         with:
           command: |
+            mkdir -p build-freebsd
             $CXX -o build-freebsd/hello-cpp examples/hello.cpp
           debug: 'true'
 
@@ -99,7 +101,7 @@ jobs:
       - name: Cross-compile Make project to FreeBSD
         uses: ./
         with:
-          command: make -C examples/make-project all
+          command: make -C examples/make-project hello-make
           debug: 'true'
 
       - name: Verify binary
@@ -174,6 +176,7 @@ jobs:
           custom-sysroot-sha256: ${{ steps.hash.outputs.sha256 }}
           verify-sysroot: 'sha256'
           command: |
+            mkdir -p build-freebsd
             $CC -o build-freebsd/hello examples/hello.c
           debug: 'true'
 
