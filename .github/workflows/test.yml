@@ -189,3 +189,42 @@ jobs:
         if: always()
         run: |
           kill $(cat /tmp/server.pid 2>/dev/null) 2>/dev/null || true
+
+  test-sbom:
+    name: Test SBOM Generation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Cross-compile and generate SBOM
+        uses: ./
+        with:
+          command: |
+            mkdir -p build-freebsd
+            $CC -o build-freebsd/hello examples/hello.c
+            $CXX -o build-freebsd/hello-cpp examples/hello.cpp
+          generate-sbom: true
+          sbom-format: both
+          debug: 'true'
+
+      - name: Verify CycloneDX SBOM
+        run: |
+          test -f build-freebsd/sbom/sbom.cyclonedx.json || (echo "CycloneDX SBOM missing!" && exit 1)
+          grep -q '"bomFormat": "CycloneDX"' build-freebsd/sbom/sbom.cyclonedx.json
+          grep -q '"specVersion": "1.5"' build-freebsd/sbom/sbom.cyclonedx.json
+          grep -q '"hello"' build-freebsd/sbom/sbom.cyclonedx.json
+          echo "CycloneDX SBOM verified"
+
+      - name: Verify SPDX SBOM
+        run: |
+          test -f build-freebsd/sbom/sbom.spdx || (echo "SPDX SBOM missing!" && exit 1)
+          grep -q 'SPDXVersion: SPDX-2.3' build-freebsd/sbom/sbom.spdx
+          grep -q 'PackageName: hello' build-freebsd/sbom/sbom.spdx
+          grep -q 'DEPENDS_ON' build-freebsd/sbom/sbom.spdx
+          echo "SPDX SBOM verified"
+
+      - name: Upload SBOM files
+        uses: actions/upload-artifact@v5
+        with:
+          name: freebsd-sbom
+          path: build-freebsd/sbom/
