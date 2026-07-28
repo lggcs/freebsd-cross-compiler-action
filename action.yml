@@ -3,8 +3,8 @@ author: 'lggcs'
 description: 'Cross-compile C/C++/CMake to FreeBSD (amd64) on ubuntu-latest — no Docker, no VM, no QEMU.'
 
 branding:
-  icon: 'box'
-  color: 'blue'
+  icon: 'server'
+  color: 'red'
 
 inputs:
   # ── Build configuration ────────────────────────────────────────────
