@@ -182,8 +182,8 @@ else
             BASE_TXZ_HASH=$(grep '^base\.txz' "$MANIFEST_FILE" | cut -f2)
             debug_log "Official base.txz SHA-256 (from FreeBSD MANIFEST): $BASE_TXZ_HASH"
 
-            CHECKSUMS_URL="https://github.com/${ACTION_REPO}/releases/download/${RELEASE_TAG}/CHECKSUMS-${SYSROOT_VERSION}.txt"
-            CHECKSUMS_FILE="${CACHE_DIR}/CHECKSUMS-${SYSROOT_VERSION}.txt"
+            CHECKSUMS_URL="https://github.com/${ACTION_REPO}/releases/download/${RELEASE_TAG}/CHECKSUMS-${VERSION_SHORT}.txt"
+            CHECKSUMS_FILE="${CACHE_DIR}/CHECKSUMS-${VERSION_SHORT}.txt"
             fetch_url "$CHECKSUMS_URL" "$CHECKSUMS_FILE"
 
             # Verify the sysroot tarball hash matches what was published
