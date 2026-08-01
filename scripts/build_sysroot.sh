@@ -25,7 +25,9 @@ set -euo pipefail
 
 VERSION="${1:-15.1-RELEASE}"
 ARCH="${2:-amd64}"
-OUTPUT_DIR="${3:-.}"
+# Resolve to absolute path immediately — prevents any later cd from
+# diverting output files into a directory that gets cleaned up.
+OUTPUT_DIR="$(cd "${3:-.}" && pwd)"
 
 FREEBSD_MIRROR="https://download.freebsd.org"
 RELEASE_URL="${FREEBSD_MIRROR}/releases/${ARCH}/${VERSION}"
@@ -33,8 +35,6 @@ RELEASE_URL="${FREEBSD_MIRROR}/releases/${ARCH}/${VERSION}"
 STAGING="$(mktemp -d /tmp/sysroot-build.XXXXXX)"
 SYSROOT_NAME="freebsd-sysroot-$(echo "$VERSION" | sed 's/-RELEASE$//')-${ARCH}"
 ROOT="${STAGING}/${SYSROOT_NAME}"
-
-trap 'rm -rf "${STAGING}"' EXIT INT TERM
 
 log()   { echo "[build_sysroot] $*"; }
 fail()  { echo "ERROR: $*" >&2; exit 1; }
@@ -160,9 +160,9 @@ log "Writing provenance and verification metadata"
 } > "${ROOT}/SYSROOT.txt"
 
 # ── Step 7: Create tarball ───────────────────────────────────────────
+mkdir -p "$OUTPUT_DIR"
 TARBALL_NAME="${SYSROOT_NAME}.tar.zst"
 TARBALL_PATH="${OUTPUT_DIR}/${TARBALL_NAME}"
-mkdir -p "$OUTPUT_DIR"
 
 log "Creating ${TARBALL_NAME}"
 tar --zstd -cf "${TARBALL_PATH}" -C "${STAGING}" "${SYSROOT_NAME}/"
@@ -188,9 +188,32 @@ log "Writing ${CHECKSUMS_FILE}"
     echo "${BASE_TXZ_HASH}  base.txz (upstream source, verified against MANIFEST)"
 } > "$CHECKSUMS_FILE"
 
-# Also write SYSROOT.txt to the output directory as a standalone provenance file
+# Write SYSROOT.txt to the output directory as a standalone provenance file
 # (it is packed inside the tarball, but also useful on disk for CI summaries)
 cp "${ROOT}/SYSROOT.txt" "${OUTPUT_DIR}/${SYSROOT_NAME}-SYSROOT.txt"
+
+# ── Explicit cleanup ─────────────────────────────────────────────────
+# All output files are safely in OUTPUT_DIR (absolute path).  Remove
+# staging explicitly — no EXIT trap, so nothing can accidentally delete
+# output files if the working directory was wrong.
+rm -rf "${STAGING}"
+
+# ── Step 9: Write GitHub Actions summary ─────────────────────────────
+# Write provenance directly to $GITHUB_STEP_SUMMARY (if available) so the
+# "Display provenance" workflow step is just a no-op fallback — no fragile
+# glob-matching between steps.
+if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+    {
+        echo "## Sysroot Build Provenance"
+        echo ""
+        cat "${OUTPUT_DIR}/${SYSROOT_NAME}-SYSROOT.txt"
+        echo ""
+        echo "### Checksums"
+        echo '```'
+        cat "$CHECKSUMS_FILE"
+        echo '```'
+    } >> "$GITHUB_STEP_SUMMARY"
+fi
 
 log ""
 log "══════════════════════════════════════════════════════════════════"

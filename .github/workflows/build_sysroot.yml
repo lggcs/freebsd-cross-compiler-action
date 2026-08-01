@@ -62,14 +62,16 @@ jobs:
 
       - name: Display provenance
         run: |
-          echo "## Sysroot Build Provenance" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          cat freebsd-sysroot-*-SYSROOT.txt >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "### Checksums" >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-          cat CHECKSUMS-*.txt >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          # build_sysroot.sh already wrote to $GITHUB_STEP_SUMMARY.
+          # This step is a fallback for local runs (no $GITHUB_STEP_SUMMARY).
+          if [ -z "${GITHUB_STEP_SUMMARY:-}" ]; then
+            for f in freebsd-sysroot-*-SYSROOT.txt; do
+              [ -f "$f" ] && cat "$f"
+            done
+            for f in CHECKSUMS-*.txt; do
+              [ -f "$f" ] && cat "$f"
+            done
+          fi
 
       - name: Verify the produced sysroot works
         run: |
