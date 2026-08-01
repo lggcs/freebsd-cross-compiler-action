@@ -165,8 +165,7 @@ TARBALL_PATH="${OUTPUT_DIR}/${TARBALL_NAME}"
 mkdir -p "$OUTPUT_DIR"
 
 log "Creating ${TARBALL_NAME}"
-cd "${STAGING}"
-tar --zstd -cf "${TARBALL_PATH}" "${SYSROOT_NAME}/"
+tar --zstd -cf "${TARBALL_PATH}" -C "${STAGING}" "${SYSROOT_NAME}/"
 
 SYSROOT_TAR_HASH=$(sha256sum "${TARBALL_PATH}" | cut -d' ' -f1)
 TARBALL_SIZE=$(ls -lh "${TARBALL_PATH}" | awk '{print $5}')
