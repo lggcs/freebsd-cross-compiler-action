@@ -102,12 +102,26 @@ verify_sha256() {
 fetch_url() {
     local url="$1"
     local dest="$2"
-    debug_log "Downloading: $url → $dest"
-    local http_code
-    http_code=$(curl -sL -w "%{http_code}" -o "$dest" "$url" || true)
-    if [ "$http_code" != "200" ]; then
-        fail "Download failed (HTTP $http_code): $url"
-    fi
+    local max_retries="${3:-1}"
+    local retry_delay=5
+    local attempt=1
+
+    while [ "$attempt" -le "$max_retries" ]; do
+        debug_log "Downloading: $url → $dest (attempt $attempt/$max_retries)"
+        local http_code
+        http_code=$(curl -sL -w "%{http_code}" -o "$dest" "$url" || true)
+        if [ "$http_code" = "200" ]; then
+            return 0
+        fi
+        if [ "$attempt" -lt "$max_retries" ]; then
+            debug_log "HTTP $http_code — retrying in ${retry_delay}s..."
+            sleep "$retry_delay"
+            retry_delay=$((retry_delay * 2))
+        fi
+        attempt=$((attempt + 1))
+    done
+
+    fail "Download failed (HTTP $http_code): $url"
 }
 
 if [ -f "${SYSROOT_DIR}/SYSROOT.txt" ]; then
@@ -159,7 +173,7 @@ else
                 || true)
             if [ -n "$ASSET_URL" ]; then
                 debug_log "Found asset URL: $ASSET_URL"
-                fetch_url "$ASSET_URL" "$DOWNLOAD_FILE"
+                fetch_url "$ASSET_URL" "$DOWNLOAD_FILE" 3
             else
                 fail "Could not download sysroot ${SYSROOT_TARBALL}. Ensure GitHub Release ${RELEASE_TAG} exists in ${ACTION_REPO} with this asset. Or use custom-sysroot-url to point to your own storage."
             fi
@@ -171,7 +185,7 @@ else
             MANIFEST_URL="https://download.freebsd.org/releases/${SYSROOT_ARCH}/${SYSROOT_VERSION}/MANIFEST"
             debug_log "Fetching MANIFEST: $MANIFEST_URL"
             MANIFEST_FILE="${CACHE_DIR}/MANIFEST-${SYSROOT_VERSION}"
-            fetch_url "$MANIFEST_URL" "$MANIFEST_FILE"
+            fetch_url "$MANIFEST_URL" "$MANIFEST_FILE" 3
 
             # The MANIFEST contains SHA-256 for base.txz, which is the source of the sysroot.
             # We verify that the MANIFEST itself is valid and log the base.txz hash.
@@ -184,7 +198,7 @@ else
 
             CHECKSUMS_URL="https://github.com/${ACTION_REPO}/releases/download/${RELEASE_TAG}/CHECKSUMS-${VERSION_SHORT}.txt"
             CHECKSUMS_FILE="${CACHE_DIR}/CHECKSUMS-${VERSION_SHORT}.txt"
-            fetch_url "$CHECKSUMS_URL" "$CHECKSUMS_FILE"
+            fetch_url "$CHECKSUMS_URL" "$CHECKSUMS_FILE" 3
 
             # Verify the sysroot tarball hash matches what was published
             EXPECTED_SYSROOT_HASH=$(grep "${SYSROOT_TARBALL}" "$CHECKSUMS_FILE" | awk '{print $1}')
